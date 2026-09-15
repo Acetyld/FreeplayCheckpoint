@@ -124,6 +124,9 @@ void CheckpointPlugin::onLoad()
 	cvarManager->registerCvar("cpt_car_frozen", "0", "Set when the car is frozen; read-only", false, true, 0, true, 1, false);
 	cvarManager->registerCvar("cpt_ball_frozen", "0", "Set when the ball is frozen; read-only", false, true, 0, true, 1, false);
 
+	presetFileDialog.SetTitle("Import Freeplay Checkpoint Preset");
+	presetFileDialog.SetAcceptableFileTypes("data");
+
 	auto snapshotIntervalCV = cvarManager->registerCvar(
 		"cpt_snapshot_interval", "1", "Collect a snapshot every <n> milliseconds; changing deletes history", true, true, 1, true, 10, true);
 	snapshotIntervalCV.addOnValueChanged([this](std::string old, CVarWrapper now) {
@@ -147,6 +150,13 @@ void CheckpointPlugin::onLoad()
 	historyLenCV.notify();
 
 	cvarManager->registerCvar("cpt_new_preset_name", "", "Name for a new Freeplay Checkpoint preset");
+	cvarManager->registerCvar("cpt_rename_preset_name", "", "New name for the active checkpoint preset");
+	cvarManager->registerCvar(
+		"cpt_allow_delete_preset",
+		"0",
+		"Enables the delete preset button",
+		false,true,0,true,1,false);
+
 
 	auto filenameCV = cvarManager->registerCvar(
 		"cpt_filename",
@@ -231,12 +241,19 @@ void CheckpointPlugin::onLoad()
 	cvarManager->registerNotifier("cpt_copy", std::bind(&CheckpointPlugin::copyShot, this, _1), "Copies the frozen state / quick checkpoint / last checkpoint to the clipboard", PERMISSION_ALL);
 	cvarManager->registerNotifier("cpt_paste", std::bind(&CheckpointPlugin::pasteShot, this, _1), "Loads a checkpoint from the clipboard as a quick checkpoint", PERMISSION_FREEPLAY);
 	cvarManager->registerNotifier("cpt_create_preset", std::bind(&CheckpointPlugin::createPreset, this, _1),"Creates a new checkpoint preset", PERMISSION_ALL);
+	cvarManager->registerNotifier("cpt_rename_preset",std::bind(&CheckpointPlugin::renamePreset, this, _1),"Renames the active checkpoint preset",PERMISSION_ALL);
+	cvarManager->registerNotifier("cpt_delete_preset",std::bind(&CheckpointPlugin::deletePreset, this, _1),"Deletes the active checkpoint preset",PERMISSION_ALL);
+
+	cvarManager->registerNotifier("cpt_import_preset",std::bind(&CheckpointPlugin::importPreset, this, _1),"Imports a checkpoint preset",PERMISSION_ALL);
 
 	// Add default bindings.
 	registerBindingCVars();
 
 	// Draw the checkpoint or notification about checkpoint deletion.
-	gameWrapper->RegisterDrawable(std::bind(&CheckpointPlugin::Render, this, std::placeholders::_1));
+	gameWrapper->RegisterDrawable([this](CanvasWrapper canvas) {
+		Render(canvas);
+	}
+);
 
 	writeSettingsFile();
 }
@@ -807,9 +824,6 @@ void CheckpointPlugin::Render(CanvasWrapper canvas) {
 			std::to_string(checkpoints.size()) + l, 6, 6);
 	}
 }
-
-// Prevent loading an unknown version's save file.
-constexpr uint32_t SAVE_FILE_VERSION = 1;
 
 void CheckpointPlugin::loadCheckpointFile() {
 	checkpoints.clear();

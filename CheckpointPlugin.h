@@ -8,17 +8,20 @@
 
 #pragma once
 
-#include "bakkesmod/plugin/bakkesmodplugin.h"
-#include "bakkesmod/plugin/pluginwindow.h"
+
 #include "utils/parser.h"
 #include "state.h"
+#include "IMGUI/imgui.h"
+#include "IMGUI/imfilebrowser.h"
+#include "bakkesmod/plugin/bakkesmodplugin.h"
+#include "bakkesmod/plugin/pluginwindow.h"
 
 #include "version.h"
 
-#include "state.h"
 #include <filesystem>
 
 constexpr auto plugin_version = stringify(VERSION_MAJOR) "." stringify(VERSION_MINOR) "." stringify(VERSION_PATCH) "." stringify(VERSION_BUILD);
+inline constexpr uint32_t SAVE_FILE_VERSION = 1;
 constexpr float MAX_DODGE_TIME = 1.2f;
 
 template<typename T>
@@ -52,7 +55,10 @@ struct RewindState {
 	int buttonsDown = 0x7f;
 };
 
-class CheckpointPlugin : public BakkesMod::Plugin::BakkesModPlugin {
+class CheckpointPlugin
+	: public BakkesMod::Plugin::BakkesModPlugin,
+      public BakkesMod::Plugin::PluginWindow
+{
 	//Boilerplate
 	virtual void onLoad();
 	void copyShot(std::vector<std::string> command);
@@ -66,6 +72,19 @@ class CheckpointPlugin : public BakkesMod::Plugin::BakkesModPlugin {
 	void lockCheckpoint(std::vector<std::string> command);
 	void prevCheckpoint(std::vector<std::string> command);
 	void nextCheckpoint(std::vector<std::string> command);
+
+	void Render() override;
+
+	std::string GetMenuName() override;
+	std::string GetMenuTitle() override;
+
+	void SetImGuiContext(uintptr_t ctx) override;
+
+	bool ShouldBlockInput() override;
+	bool IsActiveOverlay() override;
+
+	void OnOpen() override;
+	void OnClose() override;
 
 private:
 	RewindState rewindState;
@@ -123,6 +142,18 @@ private:
 	std::string sanitizePresetName(const std::string& rawName);
 
 	void createPreset(std::vector<std::string> command);
+	void renamePreset(std::vector<std::string> command);
+	void deletePreset(std::vector<std::string> command);
+	void importPreset(std::vector<std::string> command);
+	void importPresetFile(const std::filesystem::path& source);
+
+	ImGui::FileBrowser presetFileDialog{
+		ImGuiFileBrowserFlags_CloseOnEsc |
+		ImGuiFileBrowserFlags_SingleClickDir |
+		ImGuiFileBrowserFlags_SortIgnoreCase
+	};
+	bool importWindowOpen = false;
+
 	void migrateLegacyPresets();
 	void ensureDefaultPreset();
 

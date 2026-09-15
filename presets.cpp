@@ -8,10 +8,11 @@
 
 #include "pch.h"
 #include "CheckpointPlugin.h"
-
+#include "IMGUI/imfilebrowser.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,11 @@ namespace {
 	constexpr const char* PRESET_FOLDER_NAME = "FreeplayCheckpoint";
 	constexpr const char* PRESET_SUBFOLDER_NAME = "presets";
 	constexpr const char* DEFAULT_PRESET_FILE_NAME = "freeplaycheckpoint.data";
+
+	// Version 1 GameState::write() serializes:
+	// 20 floats + 6 int32 values + 1 bool = 105 bytes with the MSVC ABI.
+	constexpr std::uintmax_t SERIALIZED_GAME_STATE_SIZE =
+		20 * sizeof(float) + 6 * sizeof(std::int32_t) + sizeof(bool);
 
 	bool isInvalidFilenameCharacter(char c) {
 		switch (c) {
@@ -31,6 +37,7 @@ namespace {
 		case '|':
 		case '?':
 		case '*':
+		// Reserved by BakkesMod .set combobox option syntax.
 		case '&':
 		case '@':
 			return true;
@@ -55,6 +62,13 @@ namespace {
 		);
 
 		return value;
+	}
+
+	template<typename T>
+	bool readExact(std::istream& in, T& value) {
+		return static_cast<bool>(
+			in.read(reinterpret_cast<char*>(&value), sizeof(T))
+		);
 	}
 
 	void migrateFileIfNeeded(
@@ -96,6 +110,97 @@ namespace {
 		ec.clear();
 		std::filesystem::remove(oldPath, ec);
 	}
+
+	bool isValidPresetFile(const std::filesystem::path& path) {
+		std::error_code ec;
+		const auto fileSize = std::filesystem::file_size(path, ec);
+
+		if (ec || fileSize < sizeof(std::uint32_t) + sizeof(std::int32_t)) {
+			return false;
+		}
+
+		std::ifstream in(path, std::ios::binary);
+		if (!in.is_open()) {
+			return false;
+		}
+
+		std::uint32_t version = 0;
+		std::int32_t checkpointCount = 0;
+
+		if (!readExact(in, version) || !readExact(in, checkpointCount)) {
+			return false;
+		}
+
+		if (version != SAVE_FILE_VERSION || checkpointCount < 0) {
+			return false;
+		}
+
+		const auto headerSize = static_cast<std::uintmax_t>(sizeof(std::uint32_t) + sizeof(std::int32_t));
+
+		const auto checkpointBytes = static_cast<std::uintmax_t>(checkpointCount) * SERIALIZED_GAME_STATE_SIZE;
+
+		// Detect overflow and truncated checkpoint data.
+		if (checkpointBytes > fileSize || headerSize > fileSize - checkpointBytes) {
+			return false;
+		}
+
+		const auto lockSectionOffset = headerSize + checkpointBytes;
+
+		// Older save files had no lock section.
+		if (fileSize == lockSectionOffset) {
+			return true;
+		}
+
+		if (fileSize < lockSectionOffset + sizeof(std::int32_t)) {
+			return false;
+		}
+
+		in.seekg(static_cast<std::streamoff>(lockSectionOffset), std::ios::beg);
+
+		std::int32_t lockCount = 0;
+		if (!readExact(in, lockCount) || lockCount < 0) {
+			return false;
+		}
+
+		// Locks correspond to saved checkpoints. Older files may have fewer,
+		// but a file should never contain more lock entries than checkpoints.
+		if (lockCount > checkpointCount) {
+			return false;
+		}
+
+		const auto expectedSize =
+			lockSectionOffset
+			+ sizeof(std::int32_t)
+			+ static_cast<std::uintmax_t>(lockCount) * sizeof(bool);
+
+		return fileSize == expectedSize;
+	}
+
+	std::filesystem::path makeUniquePresetPath(
+		const std::filesystem::path& presetDirectory,
+		const std::string& filename
+	) {
+		std::filesystem::path requested(filename);
+		auto destination = presetDirectory / requested.filename();
+
+		std::error_code ec;
+		if (!std::filesystem::exists(destination, ec) && !ec) {
+			return destination;
+		}
+
+		const std::string stem = requested.stem().string();
+		const std::string extension = requested.extension().string();
+
+		for (std::uint32_t suffix = 2; ; ++suffix) {
+			destination = presetDirectory /
+				(stem + "_" + std::to_string(suffix) + extension);
+
+			ec.clear();
+			if (!std::filesystem::exists(destination, ec) && !ec) {
+				return destination;
+			}
+		}
+	}
 }
 
 std::filesystem::path CheckpointPlugin::getPresetDirectory() {
@@ -128,7 +233,11 @@ std::filesystem::path CheckpointPlugin::getPresetPath(
 }
 
 std::filesystem::path CheckpointPlugin::getCurrentPresetPath() {
-	auto filename = cvarManager->getCvar("cpt_filename").getStringValue();
+	auto filename =
+		cvarManager
+			->getCvar("cpt_filename")
+			.getStringValue();
+
 	return getPresetPath(filename);
 }
 
@@ -172,21 +281,13 @@ std::vector<std::string> CheckpointPlugin::getPresetFiles() {
 			std::string lowerRight = right;
 
 			std::transform(
-				lowerLeft.begin(),
-				lowerLeft.end(),
-				lowerLeft.begin(),
-				[](unsigned char c) {
-					return static_cast<char>(std::tolower(c));
-				}
+				lowerLeft.begin(), lowerLeft.end(), lowerLeft.begin(),
+				[](unsigned char c) { return static_cast<char>(std::tolower(c)); }
 			);
 
 			std::transform(
-				lowerRight.begin(),
-				lowerRight.end(),
-				lowerRight.begin(),
-				[](unsigned char c) {
-					return static_cast<char>(std::tolower(c));
-				}
+				lowerRight.begin(), lowerRight.end(), lowerRight.begin(),
+				[](unsigned char c) { return static_cast<char>(std::tolower(c)); }
 			);
 
 			return lowerLeft < lowerRight;
@@ -233,7 +334,6 @@ std::string CheckpointPlugin::sanitizePresetName(
 	}
 	else if (path.has_extension()) {
 		// Treat any other extension as part of the user-visible preset name.
-		// Example: "my.shots" -> "my.shots.data"
 		name = path.filename().string();
 	}
 
@@ -256,10 +356,13 @@ void CheckpointPlugin::createPreset(
 		return;
 	}
 
-	std::string filename = sanitizePresetName(presetNameCvar.getStringValue());
+	std::string filename =
+		sanitizePresetName(presetNameCvar.getStringValue());
 
 	if (filename.empty()) {
-		cvarManager->log("Freeplay Checkpoint: preset name cannot be empty");
+		cvarManager->log(
+			"Freeplay Checkpoint: preset name cannot be empty"
+		);
 		return;
 	}
 
@@ -267,55 +370,273 @@ void CheckpointPlugin::createPreset(
 
 	std::error_code ec;
 	if (std::filesystem::exists(presetPath, ec)) {
-		cvarManager->log("Freeplay Checkpoint: preset already exists: " + filename);
+		cvarManager->log(
+			"Freeplay Checkpoint: preset already exists: " + filename
+		);
 		return;
 	}
 
 	if (ec) {
-		cvarManager->log("Freeplay Checkpoint: could not check preset path: " + presetPath.string());
+		cvarManager->log(
+			"Freeplay Checkpoint: could not check preset path: "
+			+ presetPath.string()
+		);
 		return;
 	}
 
-	// A new preset starts as an empty checkpoint collection.
+	// A new preset starts as an empty saved-checkpoint collection. The global
+	// quick checkpoint is intentionally preserved.
 	setFrozen(false, false);
 	checkpoints.clear();
 	locks.clear();
 	curCheckpoint = 0;
 
-	hasQuickCheckpoint = false;
 	rewindState.atCheckpoint = false;
 	rewindState.justDeletedCheckpoint = false;
 	rewindState.justLoadedQuickCheckpoint = false;
+	rewindState.deleting = false;
 
-	// The existing cpt_filename value-changed callback will call
-	// loadCheckpointFile(). The refactored loader should safely return if the
-	// new file does not exist yet.
 	cvarManager->getCvar("cpt_filename").setValue(filename);
 
 	// Creates the new file using the plugin's existing checkpoint format.
 	saveCheckpointFile();
 
-	// Clear the text box after successful creation.
 	presetNameCvar.setValue("");
-
-	// Regenerate the dropdown so the new preset becomes available immediately.
 	writeSettingsFile();
 
 	cvarManager->log("Freeplay Checkpoint: created preset " + filename);
+}
+
+void CheckpointPlugin::renamePreset(
+	std::vector<std::string> command
+) {
+	auto renameCvar = cvarManager->getCvar("cpt_rename_preset_name");
+	if (renameCvar.IsNull()) {
+		return;
+	}
+	const std::string newFilename = sanitizePresetName(renameCvar.getStringValue());
+	if (newFilename.empty()) {
+		cvarManager->log("Freeplay Checkpoint: new preset name cannot be empty");
+		return;
+	}
+
+	const auto oldPath = getCurrentPresetPath();
+	const auto newPath = getPresetPath(newFilename);
+
+	if (oldPath.filename() == newPath.filename()) {
+		renameCvar.setValue("");
+		return;
+	}
+
+	std::error_code ec;
+	if (!std::filesystem::exists(oldPath, ec) || ec) {
+		cvarManager->log("Freeplay Checkpoint: current preset file does not exist");
+		return;
+	}
+
+	ec.clear();
+	if (std::filesystem::exists(newPath, ec)) {
+		cvarManager->log("Freeplay Checkpoint: a preset with that name already exists");
+		return;
+	}
+
+	if (ec) {
+		cvarManager->log("Freeplay Checkpoint: could not check rename destination");
+		return;
+	}
+
+	ec.clear();
+	std::filesystem::rename(oldPath, newPath, ec);
+
+	if (ec) {
+		cvarManager->log("Freeplay Checkpoint: could not rename preset: " + ec.message());
+		return;
+	}
+
+	// Updating cpt_filename reloads the same preset under its new name.
+	// The global quick checkpoint is intentionally left untouched.
+	cvarManager->getCvar("cpt_filename").setValue(newFilename);
+	renameCvar.setValue("");
+	writeSettingsFile();
+
+	cvarManager->log("Freeplay Checkpoint: renamed preset to " + newFilename);
+}
+
+void CheckpointPlugin::deletePreset(
+	std::vector<std::string> command
+) {
+	auto allowDeleteCvar = cvarManager->getCvar("cpt_allow_delete_preset");
+
+	if (allowDeleteCvar.IsNull() || !allowDeleteCvar.getBoolValue()) {
+		cvarManager->log("Freeplay Checkpoint: preset deletion is not enabled");
+		return;
+	}
+
+	auto presets = getPresetFiles();
+
+	if (presets.size() <= 1) {
+		allowDeleteCvar.setValue(false);
+		cvarManager->log("Freeplay Checkpoint: cannot delete the only preset");
+		return;
+	}
+
+	const std::string currentFilename = std::filesystem::path(
+			cvarManager->getCvar("cpt_filename").getStringValue()
+		).filename().string();
+
+	auto currentIt = std::find(presets.begin(), presets.end(), currentFilename);
+
+	if (currentIt == presets.end()) {
+		allowDeleteCvar.setValue(false);
+		cvarManager->log("Freeplay Checkpoint: current preset was not found");
+		return;
+	}
+
+	const auto currentIndex = static_cast<std::size_t>(std::distance(presets.begin(), currentIt));
+
+	const std::string replacementFilename =
+		(currentIndex + 1 < presets.size())
+			? presets[currentIndex + 1]
+			: presets[currentIndex - 1];
+
+	std::error_code ec;
+	if (!std::filesystem::remove(getCurrentPresetPath(), ec) || ec) {
+		allowDeleteCvar.setValue(false);
+		cvarManager->log("Freeplay Checkpoint: could not delete preset: " + ec.message());
+		return;
+	}
+
+	allowDeleteCvar.setValue(false);
+
+	// The cpt_filename callback clears preset-specific rewind state and loads
+	// the replacement preset. It must NOT clear the global quick checkpoint.
+	cvarManager->getCvar("cpt_filename").setValue(replacementFilename);
+	writeSettingsFile();
+
+	cvarManager->log("Freeplay Checkpoint: deleted preset " + currentFilename);
+}
+
+void CheckpointPlugin::importPresetFile(
+    const std::filesystem::path& source
+) {
+    std::error_code ec;
+
+	if (source.extension() != ".data") {
+		cvarManager->log("Freeplay Checkpoint: only .data files can be imported");
+		return;
+	}
+
+    // Make sure the selected path actually exists and is a regular file.
+    if (
+        !std::filesystem::exists(source, ec)
+        || ec
+        || !std::filesystem::is_regular_file(source, ec)
+        || ec
+    ) {
+        cvarManager->log("Freeplay Checkpoint: selected import file does not exist");
+        return;
+    }
+
+    // Only accept valid Freeplay Checkpoint files.
+    if (!isValidPresetFile(source)) {
+        cvarManager->log("Freeplay Checkpoint: selected file is not a valid preset");
+        return;
+    }
+
+    // Turn the external filename into a safe preset filename.
+    //
+    // Example:
+    //     "Flip Resets.data"
+    //          ↓
+    //     "flip_resets.data"
+    std::string filename =sanitizePresetName(source.filename().string());
+
+    if (filename.empty()) {
+        cvarManager->log("Freeplay Checkpoint: imported preset has an invalid filename");
+        return;
+    }
+
+    std::filesystem::path destination = getPresetPath(filename);
+
+    /*
+     * Don't overwrite an existing preset.
+     *
+     * flip_resets.data
+     * flip_resets_2.data
+     * flip_resets_3.data
+     * ...
+     */
+    if (std::filesystem::exists(destination)) {
+        const std::filesystem::path filenamePath(filename);
+
+        const std::string stem = filenamePath.stem().string();
+
+        const std::string extension = filenamePath.extension().string();
+
+        int suffix = 2;
+
+        do {
+            filename = stem + "_" + std::to_string(suffix) + extension;
+            destination = getPresetPath(filename);
+            ++suffix;
+        } while (std::filesystem::exists(destination));
+    }
+
+    // Copy the external file into our managed preset directory.
+    ec.clear();
+
+    std::filesystem::copy_file(
+        source,
+        destination,
+        std::filesystem::copy_options::none,
+        ec
+    );
+
+    if (ec) {
+        cvarManager->log("Freeplay Checkpoint: failed to import preset: "+ ec.message());
+        return;
+    }
+
+    /*
+     * Select the imported preset.
+     *
+     * This triggers the existing cpt_filename callback, which:
+     *   - resets curCheckpoint
+     *   - clears preset-specific rewind state
+     *   - calls loadCheckpointFile()
+     *
+     * The global quickCheckpoint is intentionally left untouched.
+     */
+    cvarManager->getCvar("cpt_filename").setValue(filename);
+
+    // Regenerate the .set file so the new preset appears in the dropdown.
+    writeSettingsFile();
+
+    cvarManager->log("Freeplay Checkpoint: imported preset " + filename);
+}
+
+void CheckpointPlugin::importPreset(
+	std::vector<std::string> command
+) {
+	// Tell the ImGui file browser to open on its next Display().
+	presetFileDialog.Open();
+
+	// The file browser needs a PluginWindow to render inside.
+	// Only open it if it is not already open.
+	if (!importWindowOpen) {
+		cvarManager->executeCommand("togglemenu " + GetMenuName());
+	}
 }
 
 void CheckpointPlugin::migrateLegacyPresets() {
 	auto dataDirectory = gameWrapper->GetDataFolder();
 	auto presetDirectory = getPresetDirectory();
 
-	// Always migrate the plugin's original default file if it exists.
 	migrateFileIfNeeded(
 		dataDirectory / DEFAULT_PRESET_FILE_NAME,
 		presetDirectory / DEFAULT_PRESET_FILE_NAME
 	);
 
-	// The original plugin also allowed the user to manually set cpt_filename.
-	// If that configured file exists directly in BakkesMod/data, migrate it too.
 	auto filenameCvar = cvarManager->getCvar("cpt_filename");
 
 	if (!filenameCvar.IsNull()) {
@@ -338,11 +659,11 @@ void CheckpointPlugin::ensureDefaultPreset() {
 	auto presets = getPresetFiles();
 
 	if (!presets.empty()) {
-		// If the configured preset no longer exists, select the first available
-		// preset rather than leaving the plugin pointed at a missing file.
 		auto currentFilename =
 			std::filesystem::path(
-				cvarManager->getCvar("cpt_filename").getStringValue()
+				cvarManager
+					->getCvar("cpt_filename")
+					.getStringValue()
 			).filename().string();
 
 		auto currentPath = getPresetPath(currentFilename);
@@ -353,19 +674,21 @@ void CheckpointPlugin::ensureDefaultPreset() {
 			|| !std::filesystem::exists(currentPath, ec)
 			|| ec
 		) {
-			cvarManager->getCvar("cpt_filename").setValue(presets.front());
+			cvarManager
+				->getCvar("cpt_filename")
+				.setValue(presets.front());
 		}
 
 		return;
 	}
 
-	// First run: make the original default filename the active preset and
-	// create an empty checkpoint file with the existing serialization logic.
 	checkpoints.clear();
 	locks.clear();
 	curCheckpoint = 0;
 
-	cvarManager->getCvar("cpt_filename").setValue(DEFAULT_PRESET_FILE_NAME);
+	cvarManager
+		->getCvar("cpt_filename")
+		.setValue(DEFAULT_PRESET_FILE_NAME);
 
 	saveCheckpointFile();
 }

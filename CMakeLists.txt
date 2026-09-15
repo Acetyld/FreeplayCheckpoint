@@ -166,18 +166,24 @@ message(STATUS "BakkesMod patcher: ${BAKKESMOD_PATCHER}")
 # ---------------------------------------------------------------------------
 
 set(FREEPLAYCHECKPOINT_SOURCES
-    CheckpointPlugin.cpp
-    SettingsFile.cpp
-    bindings.cpp
-    geometry.cpp
-    state.cpp
-    presets.cpp
-    pch.cpp
+        CheckpointPlugin.cpp
+        SettingsFile.cpp
+        bindings.cpp
+        geometry.cpp
+        state.cpp
+        presets.cpp
+        PresetImportUI.cpp
+        pch.cpp
 
-    fmt/src/format.cc
-    fmt/src/os.cc
+        # Dear ImGui
+        IMGUI/imgui.cpp
+        IMGUI/imgui_draw.cpp
+        IMGUI/imgui_widgets.cpp
 
-    CheckpointPlugin.rc
+        fmt/src/format.cc
+        fmt/src/os.cc
+
+        CheckpointPlugin.rc
 )
 
 set(FREEPLAYCHECKPOINT_HEADERS
@@ -185,6 +191,7 @@ set(FREEPLAYCHECKPOINT_HEADERS
     state.h
     pch.h
     version.h
+        PresetImportUI.cpp
 )
 
 add_library(CheckpointPlugin SHARED
@@ -197,6 +204,7 @@ target_compile_features(CheckpointPlugin PRIVATE cxx_std_17)
 target_include_directories(CheckpointPlugin PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/fmt/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/IMGUI"
     "${_bakkesmod_include_dir}"
 )
 

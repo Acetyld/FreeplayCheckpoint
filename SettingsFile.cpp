@@ -86,7 +86,7 @@ void CheckpointPlugin::writeSettingsFile() {
 1|Load next checkpoint instead of resetting|cpt_next_instead_of_reset
 8|
 9|
-9|Other options:
+9|Presets:
 8|
 )";
 	auto presets = getPresetFiles();
@@ -105,17 +105,25 @@ void CheckpointPlugin::writeSettingsFile() {
 		<< presetOptions
 		<< "\n";
 
-	setFile << "9|\n";
-
-	setFile
-		<< "12|New Preset Name|cpt_new_preset_name\n";
-
-	setFile
-		<< "0|Create Preset|cpt_create_preset\n";
-
-	setFile << "9|\n";
-
-	setFile << R"(
+setFile << R"(
+9|
+12|New Preset Name|cpt_new_preset_name
+0|Create Preset|cpt_create_preset
+9|
+12|Rename Current Preset|cpt_rename_preset_name
+0|Rename Preset|cpt_rename_preset
+9|
+9|
+0|Import Preset|cpt_import_preset
+9|
+1|Enable Preset Deletion|cpt_allow_delete_preset
+10|cpt_allow_delete_preset
+0|Delete Current Preset|cpt_delete_preset
+11|
+8|
+9|
+9|Other options:
+8|
 0|Delete ALL Shots (even locked shots; not undo-able!)|cpt_delete_all
 7|
 12||cpt_filename
