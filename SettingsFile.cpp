@@ -8,6 +8,7 @@
 
 #include "pch.h"
 #include "CheckpointPlugin.h"
+#include <filesystem>
 
 void CheckpointPlugin::writeSettingsFile() {
 	std::ofstream setFile(gameWrapper->GetBakkesModPath() / "plugins" / "settings" / "checkpointplugin.set");
@@ -87,7 +88,35 @@ void CheckpointPlugin::writeSettingsFile() {
 9|
 9|Other options:
 8|
-9|Save File Name:
+)";
+	auto presets = getPresetFiles();
+	std::string presetOptions;
+	for (const auto& filename : presets) {
+		std::filesystem::path path(filename);
+		std::string displayName = path.stem().string();
+		if (!presetOptions.empty()) {presetOptions += "&";}
+		presetOptions += displayName;
+		presetOptions += "@";
+		presetOptions += filename;
+	}
+
+	setFile
+		<< "6|Preset|cpt_filename|"
+		<< presetOptions
+		<< "\n";
+
+	setFile << "9|\n";
+
+	setFile
+		<< "12|New Preset Name|cpt_new_preset_name\n";
+
+	setFile
+		<< "0|Create Preset|cpt_create_preset\n";
+
+	setFile << "9|\n";
+
+	setFile << R"(
+0|Delete ALL Shots (even locked shots; not undo-able!)|cpt_delete_all
 7|
 12||cpt_filename
 0|Delete ALL Shots (even locked shots; not undo-able!)|cpt_delete_all

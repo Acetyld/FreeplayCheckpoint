@@ -146,11 +146,21 @@ void CheckpointPlugin::onLoad()
 	});
 	historyLenCV.notify();
 
+	cvarManager->registerCvar("cpt_new_preset_name", "", "Name for a new Freeplay Checkpoint preset");
+
 	auto filenameCV = cvarManager->registerCvar(
-		"cpt_filename", static_cast<std::string>(DEFAULT_SAVE_FILE_NAME), "Sets the filename to use for saved checkpoints", true, false, 0, false, 0, true);
+		"cpt_filename",
+		static_cast<std::string>(DEFAULT_SAVE_FILE_NAME),
+		"Active Freeplay Checkpoint preset",
+		true, false, 0, false, 0, true);
+
 	filenameCV.addOnValueChanged([this](std::string old, CVarWrapper now) {
 		setFrozen(false, false);
 		curCheckpoint = 0;
+		rewindState.atCheckpoint = false;
+		rewindState.justDeletedCheckpoint = false;
+		rewindState.justLoadedQuickCheckpoint = false;
+		rewindState.deleting = false;
 		loadCheckpointFile();
 	});
 	snapshotIntervalCV.notify();
@@ -159,6 +169,9 @@ void CheckpointPlugin::onLoad()
 		"cpt_load_after_reset", "0", "Load last checkpoint on reset if loaded within last N seconds", true, true, 0, false, 0, true);
 
 	registerVarianceCVars();
+
+	migrateLegacyPresets();
+	ensureDefaultPreset();
 
 	loadCheckpointFile();
 
@@ -217,6 +230,7 @@ void CheckpointPlugin::onLoad()
 	cvarManager->registerNotifier("cpt_freeze_ball", std::bind(&CheckpointPlugin::freezeBallUnfreezeCar, this, _1), "Freezes/unfreezes the ball", PERMISSION_FREEPLAY);
 	cvarManager->registerNotifier("cpt_copy", std::bind(&CheckpointPlugin::copyShot, this, _1), "Copies the frozen state / quick checkpoint / last checkpoint to the clipboard", PERMISSION_ALL);
 	cvarManager->registerNotifier("cpt_paste", std::bind(&CheckpointPlugin::pasteShot, this, _1), "Loads a checkpoint from the clipboard as a quick checkpoint", PERMISSION_FREEPLAY);
+	cvarManager->registerNotifier("cpt_create_preset", std::bind(&CheckpointPlugin::createPreset, this, _1),"Creates a new checkpoint preset", PERMISSION_ALL);
 
 	// Add default bindings.
 	registerBindingCVars();
@@ -800,31 +814,50 @@ constexpr uint32_t SAVE_FILE_VERSION = 1;
 void CheckpointPlugin::loadCheckpointFile() {
 	checkpoints.clear();
 	locks.clear();
-	std::ifstream in(gameWrapper->GetDataFolder() / cvarManager->getCvar("cpt_filename").getStringValue(), std::ios::binary);
-	uint32_t version;
-	readPOD(in, version);
-	if (version != SAVE_FILE_VERSION) {
-		in.close();
-		log("could not load save file with version " + std::to_string(version));
+
+	std::ifstream in(
+		getCurrentPresetPath(),
+		std::ios::binary
+	);
+
+	if (!in.is_open()) {
 		return;
 	}
-	int32_t numSaves;
+
+	uint32_t version = 0;
+	readPOD(in, version);
+
+	if (version != SAVE_FILE_VERSION) {
+		in.close();
+		log("could not load save file with version "+ std::to_string(version));
+		return;
+	}
+
+	int32_t numSaves = 0;
 	readPOD(in, numSaves);
+
 	for (int32_t i = 0; i < numSaves; i++) {
 		checkpoints.emplace_back(in);
 	}
-	int32_t numLocks = 0; // older save files did not have this data; initialize to 0.
+
+	int32_t numLocks = 0;
 	readPOD(in, numLocks);
+
 	for (int32_t i = 0; i < numLocks; i++) {
 		bool locked;
 		readPOD(in, locked);
 		locks.push_back(locked);
 	}
+
 	in.close();
 }
 
 void CheckpointPlugin::saveCheckpointFile() {
-	std::ofstream out(gameWrapper->GetDataFolder() / cvarManager->getCvar("cpt_filename").getStringValue(), std::ios::binary | std::ios::out | std::ios::trunc);
+	std::ofstream out(getCurrentPresetPath(), std::ios::binary | std::ios::out | std::ios::trunc);
+	if (!out.is_open()) {
+		cvarManager->log("Freeplay Checkpoint: could not open preset file for writing");
+		return;
+	}
 	auto ver = SAVE_FILE_VERSION;
 	writePOD(out, ver);
 	auto size = int32_t(checkpoints.size());

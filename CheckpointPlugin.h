@@ -15,6 +15,9 @@
 
 #include "version.h"
 
+#include "state.h"
+#include <filesystem>
+
 constexpr auto plugin_version = stringify(VERSION_MAJOR) "." stringify(VERSION_MINOR) "." stringify(VERSION_PATCH) "." stringify(VERSION_BUILD);
 constexpr float MAX_DODGE_TIME = 1.2f;
 
@@ -109,8 +112,24 @@ private:
 	void resetDefaultBindKeys(std::vector<std::string> params);
 	GameState applyVariance(GameState& s);
 	bool rewind(ServerWrapper sw);
+
+	// Presets
+	std::filesystem::path getPresetDirectory();
+	std::filesystem::path getPresetPath(const std::string& filename);
+	std::filesystem::path getCurrentPresetPath();
+
+	std::vector<std::string> getPresetFiles();
+
+	std::string sanitizePresetName(const std::string& rawName);
+
+	void createPreset(std::vector<std::string> command);
+	void migrateLegacyPresets();
+	void ensureDefaultPreset();
+
+	// Checkpoint persistence
 	void loadCheckpointFile();
 	void saveCheckpointFile();
+
 	void Render(CanvasWrapper canvas);
 	void record(ServerWrapper sw);
 	void loadLatestCheckpoint();
