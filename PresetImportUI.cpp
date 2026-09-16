@@ -1,3 +1,11 @@
+/*
+* Copyright (c) 2026
+ * All rights reserved.
+ *
+ * This source code is licensed under the MIT-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include "pch.h"
 #include "CheckpointPlugin.h"
 
@@ -14,8 +22,7 @@ void CheckpointPlugin::SetImGuiContext(uintptr_t ctx) {
 }
 
 bool CheckpointPlugin::ShouldBlockInput() {
-    return ImGui::GetIO().WantCaptureMouse
-        || ImGui::GetIO().WantCaptureKeyboard;
+    return ImGui::GetIO().WantCaptureMouse || ImGui::GetIO().WantCaptureKeyboard;
 }
 
 bool CheckpointPlugin::IsActiveOverlay() {

@@ -164,12 +164,24 @@ void CheckpointPlugin::onLoad()
 		"Active Freeplay Checkpoint preset",
 		true, false, 0, false, 0, true);
 
-	filenameCV.addOnValueChanged([this](std::string old, CVarWrapper now) {
-		setFrozen(false, false);
+	// State should be reset before switching files to avoid user inconvenience.
+	// Quick state is specifically left untouched here so that it can remain global across presets.
+	// The idea being if someone has a shot they want for `air_dribbles.data`, they can freeze switch to that preset
+	// then save it.
+	filenameCV.addOnValueChanged([this](const std::string &old, CVarWrapper now) {
+		const std::string filename = now.getStringValue();
+		const auto presets = getPresetFiles();
+		if (std::find(presets.begin(), presets.end(), filename) == presets.end()) {
+			cvarManager->log("Freeplay Checkpoint: rejected nonexistent preset: " + filename);
+			now.setValue(old);
+			return;
+		}
+		// The current frozen state/quick checkpoint remains global across presets.
+		// It is no longer considered a saved checkpoint in the newly selected preset
+		// setFrozen(false, false);
 		curCheckpoint = 0;
 		rewindState.atCheckpoint = false;
 		rewindState.justDeletedCheckpoint = false;
-		rewindState.justLoadedQuickCheckpoint = false;
 		rewindState.deleting = false;
 		loadCheckpointFile();
 	});
@@ -243,7 +255,6 @@ void CheckpointPlugin::onLoad()
 	cvarManager->registerNotifier("cpt_create_preset", std::bind(&CheckpointPlugin::createPreset, this, _1),"Creates a new checkpoint preset", PERMISSION_ALL);
 	cvarManager->registerNotifier("cpt_rename_preset",std::bind(&CheckpointPlugin::renamePreset, this, _1),"Renames the active checkpoint preset",PERMISSION_ALL);
 	cvarManager->registerNotifier("cpt_delete_preset",std::bind(&CheckpointPlugin::deletePreset, this, _1),"Deletes the active checkpoint preset",PERMISSION_ALL);
-
 	cvarManager->registerNotifier("cpt_import_preset",std::bind(&CheckpointPlugin::importPreset, this, _1),"Imports a checkpoint preset",PERMISSION_ALL);
 
 	// Add default bindings.
@@ -828,16 +839,26 @@ void CheckpointPlugin::Render(CanvasWrapper canvas) {
 void CheckpointPlugin::loadCheckpointFile() {
 	checkpoints.clear();
 	locks.clear();
-
-	std::ifstream in(
-		getCurrentPresetPath(),
-		std::ios::binary
-	);
-
+	auto path = getCurrentPresetPath();
+	std::error_code ec;
+	const bool exists = std::filesystem::exists(path, ec);
+	if (ec) {
+		cvarManager->log("Freeplay Checkpoint: could not check preset file: " + path.string());
+		return;
+	}
+	if (!exists) {
+		// This condition would indicate a new checkpoint file.
+		// Since this is a new file, there is no need to load any checkpoints or locks.
+		return;
+	}
+	if (!isValidPresetFile(path)) {
+		cvarManager->log("Freeplay Checkpoint: preset file is invalid: " + path.string());
+		return;
+	}
+	std::ifstream in(path, std::ios::binary);
 	if (!in.is_open()) {
 		return;
 	}
-
 	uint32_t version = 0;
 	readPOD(in, version);
 

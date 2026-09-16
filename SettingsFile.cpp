@@ -123,11 +123,8 @@ setFile << R"(
 8|
 9|
 9|Other options:
-8|
-0|Delete ALL Shots (even locked shots; not undo-able!)|cpt_delete_all
 7|
-12||cpt_filename
-0|Delete ALL Shots (even locked shots; not undo-able!)|cpt_delete_all
+0|Delete ALL Shots In Preset (even locked shots; not undo-able!)|cpt_delete_all
 7|
 1|Enable Delete ALL Shots Button|cpt_allow_delete_all
 9|

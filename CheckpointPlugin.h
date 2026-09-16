@@ -138,7 +138,7 @@ private:
 	std::filesystem::path getCurrentPresetPath();
 
 	std::vector<std::string> getPresetFiles();
-
+	bool createEmptyPresetFile(const std::filesystem::path& path);
 	std::string sanitizePresetName(const std::string& rawName);
 
 	void createPreset(std::vector<std::string> command);
@@ -175,3 +175,5 @@ private:
 	bool enabled();
 	bool enabledLoads();
 };
+
+bool isValidPresetFile(const std::filesystem::path& path);

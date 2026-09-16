@@ -191,7 +191,6 @@ set(FREEPLAYCHECKPOINT_HEADERS
     state.h
     pch.h
     version.h
-        PresetImportUI.cpp
 )
 
 add_library(CheckpointPlugin SHARED

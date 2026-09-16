@@ -74,9 +74,17 @@ Note: assumes default bindings from above.
       of the latest one.
 - **Auto-reset checkpoint**:
   - Allows drilling a shot or running through shots like a training pack.
+- **Presets**:
+  - Presets allow you to keep separate checkpoints for different types of training.
+  - Use the Preset dropdown to switch between presets.
+  - Create, rename, and delete presets from the plugin settings.
+  - You can also import other preset files from plugin settings.
+  - Quick checkpoints (*freezes*) are global and remain available when switching presets. 
+    - This allows you to switch to another preset and save the shot there.
+  - Imported presets are copied into the plugin's preset directory and will not overwrite an existing preset with the same name.
+  - The default and currently selected Freeplay Checkpoint save files are automatically migrated to the preset system.
+  - Since one preset must always exist, if there is only one preset you will not be able to delete it unless you make or import another one.
 - **Other Options**:
-  - **Save File Name**:
-    - Sets the checkpoint save file; store different types of shots in different files.
   - **Delete ALL Shots**:
     - Deletes every saved checkpoint in the current file, even locked shots.  Check the
       "Enable" checkbox first to enable the button - there is no warning or confirmation
