@@ -119,6 +119,7 @@ private:
 	bool mirrorLoads = false;
 	bool randomizeLoads = false;
 	bool showBoost = false;
+	bool disableDeleteOnDpadDown = false;
 
 	void addBind(std::string key, std::string cmd);
 	void removeBind(std::string key, std::string cmd);

@@ -23,6 +23,7 @@ void CheckpointPlugin::writeSettingsFile() {
 0|         Checkpoint (cpt_do_checkpoint)       |cpt_capture_key cpt_do_checkpoint
 7|
 9| [ $cpt_do_checkpoint_key$ ]
+1|Disable delete on D-pad down (checkpoint button never deletes)|cpt_disable_delete_on_dpad_down
 0|  Prev. Checkpoint (cpt_prev_checkpoint) |cpt_capture_key cpt_prev_checkpoint
 7|
 9| [ $cpt_prev_checkpoint_key$ ]

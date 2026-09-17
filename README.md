@@ -36,6 +36,7 @@ Note: assumes default bindings from above.
   - In rewind mode, at a saved checkpoint: deletes the current checkpoint (press twice)
   - While playing: loads the latest checkpoint
   - In a replay, saves the currently selected car & ball as a checkpoint
+  - If **Disable delete on D-pad down** is checked, this command never deletes checkpoints
 - `cpt_prev_checkpoint` / `cpt_next_checkpoint`: loads the previous/next saved checkpoint
 - `cpt_rand_checkpoint`: loads a random saved checkpoint
 - `cpt_lock_checkpoint`: locks/unlocks the current checkpoint to prevent/allow its deletion.
@@ -58,6 +59,10 @@ Note: assumes default bindings from above.
   - Controller players may hold the button they wish to bind and click the action they
     wish to bind to that button.
   - Recommended: Do *not* bind cpt_checkpoint to the same button as "reset shot".
+  - Disable delete on D-pad down (default off):
+    - When checked, the checkpoint button (`cpt_do_checkpoint`, e.g. D-pad down) will not
+      delete a frozen checkpoint. Saving and loading checkpoints still work.
+    - Unchecked (default) keeps the existing press-twice-to-delete behavior.
   - Ignore prev/next/freeze ball when not frozen (recommended):
     - Avoids interfering with bakkesmod default commands.
   - Disable binds in custom training: ignore commands in custom training
